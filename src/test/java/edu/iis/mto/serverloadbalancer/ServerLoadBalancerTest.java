@@ -8,25 +8,20 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 
-import org.junit.After;
 import org.junit.Test;
-import org.junit.experimental.runners.Enclosed;
-import org.junit.runner.JUnitCore;
-import org.junit.runner.Result;
 import org.junit.runner.RunWith;
-import org.junit.runner.notification.Failure;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Suite;
 
-import java.util.Arrays;
-import java.util.Collection;
-
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RunWith(Suite.class)
 @Suite.SuiteClasses({
-		 ServerLoadBalancerTest.ServerLoadBalanceTestParametrized.class ,ServerLoadBalancerTest.ServerLoadBalanceTestStatic.class
+		 ServerLoadBalancerTest.ServerLoadBalanceTestParametrized.class, ServerLoadBalancerTest.ServerLoadBalanceTestStatic.class,
+		ServerLoadBalancerTest.ServerLoadBalanceTestParametrizedMultipleServersAndVms.class
 })
-public class ServerLoadBalancerTest{
+public class ServerLoadBalancerTest  extends ServerLoadBalancerBaseTest{
 
 	public static class ServerLoadBalanceTestStatic extends ServerLoadBalancerBaseTest{
 
@@ -118,7 +113,8 @@ public class ServerLoadBalancerTest{
 
 		@Parameterized.Parameter(value = 3) public boolean expectedServerContainsVm;
 
-		@Test public void balance_serversAndVms() {
+		@Test
+		public void balance_serversAndVms() {
 			Server theServer = a(server().withCapacity(inputServerCapacity));
 			Vm theVm = a(vm().ofSize(inputVmSize));
 			balance(aListOfServersWith(theServer),aListOfVmsWith(theVm));
@@ -128,4 +124,106 @@ public class ServerLoadBalancerTest{
 		}
 
 	}
+
+	@RunWith(value = Parameterized.class)
+	public static class ServerLoadBalanceTestParametrizedMultipleServersAndVms extends ServerLoadBalancerBaseTest{
+
+		@Parameterized.Parameters public static Collection<Object[]> defaultDataToTest() {
+			return Arrays.asList(
+					new Object[][] {{(List.of(0,1,2)), List.of(0), List.of(0d,0d,0d), List.of(false,true,false)},
+									{List.of(0,1,2), List.of(0,1,2),List.of(0d,100d,100d,0d,100d,0d,0d,100d,0d), List.of(false,false,false,true,true,false,false,false,true)},
+									{List.of(0,1,2,3), List.of(0,3), List.of(0d,0d,0d,100d,0d,0d,0d,0d), List.of(false,false,true,false,false,false,false,true)}});
+		}
+
+		public static final ArrayList<ServerToTest> serverToTestArrayList = new ArrayList<>(
+				List.of(new ServerToTest(0),new ServerToTest(1),new ServerToTest(2),new ServerToTest(3))
+		);
+
+		public static final ArrayList<VmToTest> vmToTestArrayList = new ArrayList<>(
+				List.of(new VmToTest(0),new VmToTest(1),new VmToTest(2),new VmToTest(3))
+		);
+
+		@Parameterized.Parameter(value = 0) public List<Integer> inputListIndexOfServerToTest;
+
+		@Parameterized.Parameter(value = 1) public List<Integer> inputIndexOfVmToTest;
+
+		@Parameterized.Parameter(value = 2) public List<Double> expectedLoadPercentage;
+
+		@Parameterized.Parameter(value = 3) public List<Boolean> expectedServerContainsVm;
+
+		@Test
+		public void balance_MultipleServersAndVms() {
+			ArrayList<ServerToTest> serversToTest = new ArrayList<>();
+			ArrayList<VmToTest> vmsToTest = new ArrayList<>();
+
+			LinkedList<Double> expectedLoadPercentageLinkedList = new LinkedList<>(expectedLoadPercentage);
+			LinkedList<Boolean> expectedServerContainsVmLinkedList = new LinkedList<>(expectedServerContainsVm);
+
+
+			inputListIndexOfServerToTest.forEach(index->{
+				serversToTest.add(serverToTestArrayList.get(index).makeCopy());
+			});
+
+			inputIndexOfVmToTest.forEach(index->{
+				vmsToTest.add(vmToTestArrayList.get(index).makeCopy());
+			});
+
+			Server[] servers =  serversToTest.stream().map(i->i.server).toArray(Server[]::new);
+			Vm[] vms = vmsToTest.stream().map(i->i.vm).toArray(Vm[]::new);
+
+			balance(servers,vms);
+
+			//LoadPercentage Assert
+            for (Server server : servers) {
+                assertThat(server, hasLoadPercentageOf(expectedLoadPercentageLinkedList.remove()));
+
+            }
+
+            //ServerContainsVm Assert
+            for (Server server : servers) {
+                for (Vm vm : vms) {
+                    assertThat(server.contains(vm), is(expectedServerContainsVmLinkedList.remove()));
+                }
+            }
+
+
+		}
+
+	}
+
+	private static class ServerToTest extends ServerLoadBalancerBaseTest{
+
+		Server server;
+		int serverCapacity;
+
+		ServerToTest(int serverCapacity) {
+			this.serverCapacity = serverCapacity;
+
+			server = a(server().withCapacity(serverCapacity));
+		}
+
+		ServerToTest makeCopy(){
+			return new ServerToTest(serverCapacity);
+		}
+
+	}
+
+	private static class VmToTest extends ServerLoadBalancerBaseTest {
+
+		Vm vm;
+		int vmSize;
+
+		public VmToTest(int vmSize) {
+			this.vmSize = vmSize;
+
+			vm = a(vm().ofSize(vmSize));
+		}
+
+		VmToTest makeCopy(){
+			return new VmToTest(vmSize);
+		}
+
+
+	}
+
 }
